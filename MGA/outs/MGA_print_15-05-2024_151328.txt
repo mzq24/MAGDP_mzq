@@ -1,0 +1,128 @@
+MGA_net(
+  (encoder): Sim_Enc(
+    (Agn_Enc_MLP): Sequential(
+      (0): Linear(in_features=66, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+      (4): Linear(in_features=128, out_features=128, bias=True)
+      (5): LeakyReLU(negative_slope=0.1)
+    )
+    (CCL_Enc_MLP): Sequential(
+      (0): Linear(in_features=44, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+      (4): Linear(in_features=128, out_features=128, bias=True)
+      (5): LeakyReLU(negative_slope=0.1)
+    )
+    (Agn_Attr_Enc): Sequential(
+      (0): Linear(in_features=4, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+    )
+    (CCL_Attr_Enc): Sequential(
+      (0): Linear(in_features=4, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+    )
+    (Fuse_Agn_Hist_Attr_MLP): Sequential(
+      (0): Linear(in_features=256, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+    )
+    (Fuse_CCL_Seqs_Attr_MLP): Sequential(
+      (0): Linear(in_features=256, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+    )
+    (leaky_relu): LeakyReLU(negative_slope=0.1)
+    (norm1): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+    (agn_Dyn_emb): Linear(in_features=128, out_features=256, bias=True)
+    (agn_CCL_emb): Linear(in_features=128, out_features=256, bias=True)
+    (agn_Int_emb): Linear(in_features=768, out_features=256, bias=True)
+    (agn_CCLs_emb): Linear(in_features=768, out_features=256, bias=True)
+    (CCL_to_Agn_GAT_1): GATConv(128, 256, heads=3)
+    (Agn_to_Agn_GAT_1): GATConv(768, 256, heads=3)
+    (norm2): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+  )
+  (att_combiner): TransformerCombiner(
+    (transformer_encoder): TransformerEncoder(
+      (layers): ModuleList(
+        (0): TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)
+          )
+          (linear1): Linear(in_features=256, out_features=512, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=512, out_features=256, bias=True)
+          (norm1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+    (linear): Linear(in_features=256, out_features=256, bias=True)
+  )
+  (goal_dec): Sequential(
+    (0): Linear(in_features=768, out_features=256, bias=True)
+    (1): LeakyReLU(negative_slope=0.1)
+    (2): Linear(in_features=256, out_features=12, bias=True)
+  )
+)
+number of parameters: 2159628
+MGA-M6_Marginal-attn, ep 1, SmoothL1 loss train 7.88, eval 5.35, min-Joint-FDE 16.87, Marginal minFDE 9.51, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 2, SmoothL1 loss train 4.85, eval 4.7, min-Joint-FDE 14.9, Marginal minFDE 8.45, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 3, SmoothL1 loss train 4.09, eval 4.08, min-Joint-FDE 13.63, Marginal minFDE 7.38, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 4, SmoothL1 loss train 3.76, eval 3.68, min-Joint-FDE 12.68, Marginal minFDE 6.63, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 5, SmoothL1 loss train 3.56, eval 3.5, min-Joint-FDE 12.46, Marginal minFDE 6.46, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 6, SmoothL1 loss train 3.39, eval 3.41, min-Joint-FDE 12.51, Marginal minFDE 6.24, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 7, SmoothL1 loss train 3.28, eval 3.27, min-Joint-FDE 11.78, Marginal minFDE 6.09, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 8, SmoothL1 loss train 3.19, eval 3.14, min-Joint-FDE 11.97, Marginal minFDE 5.83, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 9, SmoothL1 loss train 3.1, eval 3.08, min-Joint-FDE 11.47, Marginal minFDE 5.69, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 10, SmoothL1 loss train 3.02, eval 3.02, min-Joint-FDE 11.43, Marginal minFDE 5.64, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 11, SmoothL1 loss train 2.95, eval 2.89, min-Joint-FDE 11.33, Marginal minFDE 5.37, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 12, SmoothL1 loss train 2.9, eval 2.95, min-Joint-FDE 11.73, Marginal minFDE 5.56, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 13, SmoothL1 loss train 2.85, eval 2.85, min-Joint-FDE 11.2, Marginal minFDE 5.33, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 14, SmoothL1 loss train 2.79, eval 2.91, min-Joint-FDE 11.53, Marginal minFDE 5.39, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 15, SmoothL1 loss train 2.74, eval 2.93, min-Joint-FDE 11.21, Marginal minFDE 5.47, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 16, SmoothL1 loss train 2.69, eval 2.73, min-Joint-FDE 10.71, Marginal minFDE 5.14, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 17, SmoothL1 loss train 2.67, eval 2.92, min-Joint-FDE 11.33, Marginal minFDE 5.47, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 18, SmoothL1 loss train 2.65, eval 2.73, min-Joint-FDE 10.66, Marginal minFDE 5.07, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 19, SmoothL1 loss train 2.61, eval 2.73, min-Joint-FDE 10.92, Marginal minFDE 5.19, [ lr= 0.0001 ]
+MGA-M6_Marginal-attn, ep 20, SmoothL1 loss train 2.58, eval 2.66, min-Joint-FDE 10.6, Marginal minFDE 5.02, [ lr= 5e-05 ]
+MGA-M6_Marginal-attn, ep 21, SmoothL1 loss train 2.36, eval 2.47, min-Joint-FDE 10.33, Marginal minFDE 4.71, [ lr= 5e-05 ]
+MGA-M6_Marginal-attn, ep 22, SmoothL1 loss train 2.3, eval 2.44, min-Joint-FDE 10.12, Marginal minFDE 4.64, [ lr= 2.5e-05 ]
+MGA-M6_Marginal-attn, ep 23, SmoothL1 loss train 2.19, eval 2.35, min-Joint-FDE 9.96, Marginal minFDE 4.51, [ lr= 2.5e-05 ]
+MGA-M6_Marginal-attn, ep 24, SmoothL1 loss train 2.15, eval 2.31, min-Joint-FDE 9.91, Marginal minFDE 4.45, [ lr= 1.25e-05 ]
+MGA-M6_Marginal-attn, ep 25, SmoothL1 loss train 2.07, eval 2.27, min-Joint-FDE 9.83, Marginal minFDE 4.38, [ lr= 1.25e-05 ]
+MGA-M6_Marginal-attn, ep 26, SmoothL1 loss train 2.06, eval 2.28, min-Joint-FDE 9.73, Marginal minFDE 4.39, [ lr= 6.25e-06 ]
+MGA-M6_Marginal-attn, ep 27, SmoothL1 loss train 2.02, eval 2.25, min-Joint-FDE 9.72, Marginal minFDE 4.34, [ lr= 6.25e-06 ]
+MGA-M6_Marginal-attn, ep 28, SmoothL1 loss train 2.01, eval 2.25, min-Joint-FDE 9.67, Marginal minFDE 4.35, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 29, SmoothL1 loss train 1.99, eval 2.25, min-Joint-FDE 9.74, Marginal minFDE 4.35, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 30, SmoothL1 loss train 1.98, eval 2.23, min-Joint-FDE 9.64, Marginal minFDE 4.33, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 31, SmoothL1 loss train 1.97, eval 2.26, min-Joint-FDE 9.66, Marginal minFDE 4.38, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 32, SmoothL1 loss train 1.97, eval 2.23, min-Joint-FDE 9.64, Marginal minFDE 4.32, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 33, SmoothL1 loss train 1.96, eval 2.24, min-Joint-FDE 9.69, Marginal minFDE 4.33, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 34, SmoothL1 loss train 1.96, eval 2.24, min-Joint-FDE 9.65, Marginal minFDE 4.32, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 35, SmoothL1 loss train 1.96, eval 2.22, min-Joint-FDE 9.64, Marginal minFDE 4.29, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 36, SmoothL1 loss train 1.95, eval 2.24, min-Joint-FDE 9.65, Marginal minFDE 4.33, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 37, SmoothL1 loss train 1.95, eval 2.23, min-Joint-FDE 9.64, Marginal minFDE 4.31, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 38, SmoothL1 loss train 1.95, eval 2.23, min-Joint-FDE 9.61, Marginal minFDE 4.31, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 39, SmoothL1 loss train 1.94, eval 2.22, min-Joint-FDE 9.59, Marginal minFDE 4.29, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 40, SmoothL1 loss train 1.94, eval 2.23, min-Joint-FDE 9.63, Marginal minFDE 4.29, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 41, SmoothL1 loss train 1.93, eval 2.24, min-Joint-FDE 9.6, Marginal minFDE 4.34, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 42, SmoothL1 loss train 1.93, eval 2.23, min-Joint-FDE 9.68, Marginal minFDE 4.31, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 43, SmoothL1 loss train 1.93, eval 2.23, min-Joint-FDE 9.66, Marginal minFDE 4.31, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 44, SmoothL1 loss train 1.92, eval 2.25, min-Joint-FDE 9.75, Marginal minFDE 4.35, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 45, SmoothL1 loss train 1.92, eval 2.22, min-Joint-FDE 9.58, Marginal minFDE 4.31, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 46, SmoothL1 loss train 1.91, eval 2.23, min-Joint-FDE 9.7, Marginal minFDE 4.31, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 47, SmoothL1 loss train 1.91, eval 2.23, min-Joint-FDE 9.64, Marginal minFDE 4.3, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 48, SmoothL1 loss train 1.91, eval 2.23, min-Joint-FDE 9.64, Marginal minFDE 4.31, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 49, SmoothL1 loss train 1.9, eval 2.23, min-Joint-FDE 9.68, Marginal minFDE 4.33, [ lr= 3.125e-06 ]
+MGA-M6_Marginal-attn, ep 50, SmoothL1 loss train 1.9, eval 2.26, min-Joint-FDE 9.63, Marginal minFDE 4.37, [ lr= 3.125e-06 ]

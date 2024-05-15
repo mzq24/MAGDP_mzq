@@ -1,0 +1,78 @@
+MGA_net(
+  (encoder): Sim_Enc(
+    (Agn_Enc_MLP): Sequential(
+      (0): Linear(in_features=66, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+      (4): Linear(in_features=128, out_features=128, bias=True)
+      (5): LeakyReLU(negative_slope=0.1)
+    )
+    (CCL_Enc_MLP): Sequential(
+      (0): Linear(in_features=44, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+      (4): Linear(in_features=128, out_features=128, bias=True)
+      (5): LeakyReLU(negative_slope=0.1)
+    )
+    (Agn_Attr_Enc): Sequential(
+      (0): Linear(in_features=4, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+    )
+    (CCL_Attr_Enc): Sequential(
+      (0): Linear(in_features=4, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+    )
+    (Fuse_Agn_Hist_Attr_MLP): Sequential(
+      (0): Linear(in_features=256, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+    )
+    (Fuse_CCL_Seqs_Attr_MLP): Sequential(
+      (0): Linear(in_features=256, out_features=128, bias=True)
+      (1): LeakyReLU(negative_slope=0.1)
+      (2): Linear(in_features=128, out_features=128, bias=True)
+      (3): LeakyReLU(negative_slope=0.1)
+    )
+    (leaky_relu): LeakyReLU(negative_slope=0.1)
+    (norm1): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+    (agn_Dyn_emb): Linear(in_features=128, out_features=256, bias=True)
+    (agn_CCL_emb): Linear(in_features=128, out_features=256, bias=True)
+    (agn_Int_emb): Linear(in_features=768, out_features=256, bias=True)
+    (agn_CCLs_emb): Linear(in_features=768, out_features=256, bias=True)
+    (CCL_to_Agn_GAT_1): GATConv(128, 256, heads=3)
+    (Agn_to_Agn_GAT_1): GATConv(768, 256, heads=3)
+    (norm2): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+  )
+  (att_combiner): TransformerCombiner(
+    (transformer_encoder): TransformerEncoder(
+      (layers): ModuleList(
+        (0): TransformerEncoderLayer(
+          (self_attn): MultiheadAttention(
+            (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)
+          )
+          (linear1): Linear(in_features=256, out_features=512, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+          (linear2): Linear(in_features=512, out_features=256, bias=True)
+          (norm1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+          (norm2): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+          (dropout1): Dropout(p=0.1, inplace=False)
+          (dropout2): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+    (linear): Linear(in_features=256, out_features=256, bias=True)
+  )
+  (goal_dec): Sequential(
+    (0): Linear(in_features=768, out_features=256, bias=True)
+    (1): LeakyReLU(negative_slope=0.1)
+    (2): Linear(in_features=256, out_features=12, bias=True)
+  )
+)
+number of parameters: 2159628
