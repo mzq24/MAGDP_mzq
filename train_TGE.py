@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 from dataset_may17 import SimAgn_Dataset, flat_Batch, retrieve_mask
 
+
 def train_a_model(model_to_tr, train_loader, loss_func, num_ep=1, num_batch=-1):
     model_to_tr.train()
     running_loss = 0.0
