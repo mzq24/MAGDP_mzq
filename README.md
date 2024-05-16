@@ -5,6 +5,12 @@
 ```~/sim/MAGDP/ ```
 ## 数据：
 原始数据集在`~/sim/Waymo_Dataset`。处理后的数据集在 `~/sim/SimAgent_Dataset/pyg_data_Jun23`
+数据处理 
+```
+python -W ignore data_preprocess.py --data_split validation_0-140
+python -W ignore data_preprocess.py --data_split validation_140-145
+python -W ignore data_preprocess.py --data_split validation_145-150
+```
 ## MAG
 
 ### 复现 IV-24 的结果
