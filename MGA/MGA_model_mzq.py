@@ -1,5 +1,10 @@
+import sys
+
+sys.path.append('../')
+sys.path.append('../MGA')
+
 import torch
-from sim_enc_mzq import Sim_Enc
+from model_mzq.sim_enc_mzq import Sim_Enc
 from attention import TransformerCombiner
 # from simple_attention import Simple_Attention
 from utils.data_utils import convert_goalsBatch_to_goalsets_for_scenarios
