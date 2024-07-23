@@ -1,76 +1,47 @@
 from __future__ import print_function
 from calendar import c
-import dis
-from distutils.command import check
 import os
-import string
 import sys
-import shutil
 import time
-from lark import Tree
-import pandas as pd
-from datetime import date
 import argparse
 import pickle
-import pprint
 import torch
 from torch.optim.lr_scheduler import MultiStepLR
 from torch_geometric.loader import DataLoader
+import json
 import numpy as np
-
-sys.path.append('/home/xy/sim/MAGDP')       # sys.path.append('../')
-sys.path.append('/home/xy/sim/MAGDP/utils')
+import logging
+from torch import nn
+from MGA_model_mzq import MGA_net
+from eval_MGA import eval_a_model
+from datetime import datetime
 from dataset_mzq import SimAgn_Dataset, flat_Batch, retrieve_mask
-# from mtploss import MTPLoss
 from utils.data_utils import convert_goalsBatch_to_goalsets_for_scenarios
-
 from tqdm import tqdm
+from loss_ma_goal_joint_collision_offroad_position import joint_mag_loss_w_inter_group_position
+
+sys.path.append('../')
+sys.path.append('/home/xy/mzq/code/MAGDP')
+sys.path.append('/home/xy/mzq/code/MAGDP/MGA')
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
-def train_a_model(model_to_tr, train_loader, loss_func, num_ep=1, num_batch=-1):
+def train_a_model(model_to_tr, train_loader, loss_func, num_ep=1, num_batch=-1, jp_loss=False):
     model_to_tr.train()
     running_loss = 0.0
     train_time_tic = time.time()
     for d_idx, data in tqdm(enumerate(train_loader)):
-    # for d_idx, data in enumerate(train_loader):
         data = flat_Batch(data).to(args['device'])
         ground_truth_goalsets = convert_goalsBatch_to_goalsets_for_scenarios(data.agn_goal_set, data.num_goal_valid_agn)
-        # print(data)
         # zero the parameter gradients
         optimizer.zero_grad()
         # forward + backward + optimize
         goal_pred = model_to_tr(data)
-
-        # if model_to_tr.args['loss_type'] == 'Joint':
-        #     batch_loss = sum([loss_func(goal_pred[i], ground_truth_goalsets[i], num_modes=model_to_tr.args['num_modes']) for i in range(len(goal_pred))])/len(goal_pred)
-        # if model_to_tr.args['loss_type'] == 'Marginal':
-        #     batch_loss = loss_func(torch.cat([goal_pred[i] for i in range(len(goal_pred))]), 
-        #                            data.agn_goal_set, 
-        #                            num_modes=model_to_tr.args['num_modes'])
-        
         batch_loss = sum([loss_func(goal_pred[i], ground_truth_goalsets[i], num_modes=model_to_tr.args['num_modes']) for i in range(len(goal_pred))])/len(goal_pred)
-        
-        # loss_out = [loss_func(goal_pred[i], ground_truth_goalsets[i], num_modes=model_to_tr.args['num_modes'])  for i in range(len(goal_pred))]
-        # print(loss_out)
-        # batch_loss = sum([torch.min(l) for l in loss_out])/len(goal_pred)
 
-        # best_modes = [l[1] for l in loss_out]
-        # batch_loss_ccl  = sum([ Goals_distance_to_CCLs(goal_pred[i][:,best_modes[i],:], data.agn_CCLs[i]) for i in range(len(goal_pred))])/len(goal_pred)
-
-        ## 测试 dist2CCLs loss
-        # print(batch_loss_goal)
-        # print(f'batch_loss_ccl {batch_loss_ccl}')
-        # print(len(data.agn_CCLs[0]))
-        # Goals_distance_to_CCLs(goal_pred[0], data.agn_CCLs[0])
-
-
-        # batch_loss = batch_loss_goal + 0.1*batch_loss_ccl
-        # batch_loss = batch_loss_ccl
-        # batch_loss = batch_loss_goal
-        # print(batch_loss)
         batch_loss.backward()
-        a = torch.nn.utils.clip_grad_norm_(model_to_tr.parameters(), 1)
+        torch.nn.utils.clip_grad_norm_(model_to_tr.parameters(), 1)
         optimizer.step()
         running_loss += batch_loss.item()
 
@@ -78,7 +49,7 @@ def train_a_model(model_to_tr, train_loader, loss_func, num_ep=1, num_batch=-1):
             break
     return round(running_loss/(d_idx+1), 2)
 
-def set_ckpt_name(ckpt_folder_path: str, args: dict, min_val_loss: float, threshold: float, dist_threshold: float):
+def set_ckpt_name_old(ckpt_folder_path: str, args: dict, min_val_loss: float, threshold: float, dist_threshold: float):
     model_type = args['dec_type'] + '_M{}_'.format(args['num_modes']) + args['loss_type']
     if args['feat_attention']:
         model_type += '_attn'
@@ -86,10 +57,26 @@ def set_ckpt_name(ckpt_folder_path: str, args: dict, min_val_loss: float, thresh
     model_name = f'{ckpt_folder_path}/{model_type}_minJDE{min_val_loss}_thr{threshold}_attenc{int(use_a)}_distthr{dist_threshold}.ckpt'
     return model_name
 
-def set_log_name(log_folder_path: str, args: dict, dt_string: str, threshold: float, dist_threshold: float):
+def set_ckpt_name(ckpt_folder_path: str, file_name: str, min_val_loss: float):
+    model_name = f'{ckpt_folder_path}/{file_name}_minJDE{min_val_loss}.ckpt'
+    return model_name
+
+def init_log(train_net):
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    handler = logging.FileHandler('logfile.log')
+    logger.addHandler(handler)
+    train_net.set_logger(logger)
+    return logger
+
+def set_log_name_old(log_folder_path: str, args: dict, dt_string: str, threshold: float, dist_threshold: float):
     model_type = args['dec_type'] + '-M{}_'.format(args['num_modes']) + args['loss_type']
     use_a = args['use_attention']
     log_name = f"{log_folder_path}/MGA_print_{dt_string}_{model_type}_thr{threshold}_attenc{int(use_a)}_distthr{dist_threshold}.txt"
+    return log_name
+
+def set_log_name(log_folder_path: str, dt_string: str):
+    log_name = f"{log_folder_path}/MGA_{dt_string}.txt"
     return log_name
 
 def find_files_with_params(model_path, gnn_type, loss_type, thr_number, attenc_number):
@@ -157,17 +144,7 @@ def find_minloss_from_ckptname(ckptname):
     min_loss = float(ckptname[start_index+2:].split('-')[0])
     return min_loss
 
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--loss_type", type=str, default='Joint', help="feature used for decoding", choices=['Joint', 'Marginal'])
-    opt = parser.parse_args()
-    # print(opt)
-    from MGA_model_mzq import MGA_net
-    from eval_MGA import eval_a_model
-
-    from datetime import datetime
-
+def init_parse_old_version():
     args={}
     args['train_epoches'] = 50
     args['enc_hidden_size'] = 128
@@ -175,16 +152,23 @@ if __name__ == '__main__':
     args['enc_embed_size']  = 256
     args['enc_gat_size']    = 256
     args['num_gat_head'] = 4
-    args['num_modes'] = 6
+    args['num_modes'] = 32
     args['batch_size'] = 32
-    args['threshold'] = 0.35
     args['train_split'] = 0.9
-    args['num_batch']   =  -1  # -1 # -1
-    args['eval_num_batch'] = 300 # 300
-    args['dec_type'] = 'MGA' # 'mtpGoal' # 'mtp_goal_veh'
-    args['feat_attention'] = True
+    args['num_batch']   =  -1           # -1 # -1
+    args['eval_num_batch'] = 300        # 300
 
-    args['loss_type'] = opt.loss_type # 'Joint' # 'Marginal'
+    args['train_from_scratch'] = True
+    args['dec_type'] = 'MGA'            # 'mtpGoal' # 'mtp_goal_veh'
+    args['feat_attention'] = True       # Dyn, CCL, Int whether use att to combine them
+    args['loss_type'] = 'Joint'         # 'Joint' # 'Marginal'
+    args['gnn_conv'] = 'GATConv'        # 'GATv2Conv' # 'GATConv' # 'TransformerConv' # 'GCNConv'
+    args['use_attention'] = False       # trajectories whether use att to handle them
+    args['use_gsl'] = True              # whether use gsl
+    args['dist_threshold'] = 50.0       # threhold for finding the best edge index
+    args['threshold'] = 0.35            # threshold for finding the best value for gsl
+    args['norm_seg'] = 1                # 1: [Dyn, CCLs, Int], 2: [Dyn, Int], 3: [Dyn], 4: [Dyn, CCLs]
+    args['eval'] = False
     if args['loss_type'] == 'Joint':
         from mtp_goal_loss import mtp_goal_loss
         loss_func_for_training = mtp_goal_loss
@@ -193,66 +177,128 @@ if __name__ == '__main__':
         loss_func_for_training = marginal_mtp_goal_loss
     else:
         raise ValueError('loss_type should be either Joint or Marginal')
+    return args, loss_func_for_training
 
-    args['gnn_conv'] = 'GATConv'  # 'GATv2Conv' # 'GATConv' # 'TransformerConv'
-    args['use_attention'] = False
-    args['train_from_scratch'] = True
-    args['dist_thresholds'] = [1.0, 10.0, 30.0, 50.0]
+def info_old_version():
+    print(f"threshold: {args['threshold']}", file=f, flush=True)
+    print(f"gnn_type: {args['gnn_conv']}", file=f, flush=True)
+    print(f"loss_type: {args['loss_type']}", file=f, flush=True)
+    print(f"enc_attention: {args['use_attention']}", file=f, flush=True)
+    print(f"dist_threshold: {dist_threshold}", file=f, flush=True)
+    pytorch_total_params = sum(p.numel() for p in train_net.parameters())
+    print('number of parameters: {}'.format(pytorch_total_params), file=f, flush=True)
+    print('number of parameters: {}'.format(pytorch_total_params))
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-epoch', '--train_epoches', type=int, default=50)
+    parser.add_argument('--enc_hidden_size', type=int, default=128)
+    parser.add_argument('--dec_hidden_size', type=int, default=256)
+    parser.add_argument('--enc_embed_size', type=int, default=256)
+    parser.add_argument('--enc_gat_size', type=int, default=256)
+    parser.add_argument('--num_gat_head', type=int, default=4)
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--train_split', type=float, default=0.9)
+    parser.add_argument('--num_batch', type=int, default=-1)
+    parser.add_argument('--eval_num_batch', type=int, default=300)
+
+    parser.add_argument('-tfs', '--train_from_scratch', default=True)
+    parser.add_argument('-det', '--dec_type', type=str, default='MGA')
+    parser.add_argument('--num_modes', type=int, default=6)
+    parser.add_argument('-lt', '--loss_type', type=str, default='Joint', help="feature used for decoding", choices=['Joint', 'Marginal', 'Joint_position'])
+    parser.add_argument('-a', '--feat_attention', action='store_true', default=False)
+    parser.add_argument('-gnn', '--gnn_conv', type=str, default='GATConv')
+    parser.add_argument('-tr', '--use_attention', action='store_true', default=False)
+    parser.add_argument('-g', '--use_gsl', action='store_true', default=False)
+    parser.add_argument('-dt', '--dist_threshold', type=float, default=50.0)
+    parser.add_argument('-t', '--threshold', type=float, default=0.35)
+    parser.add_argument('-seg', '--norm_seg', type=int, default=1)
+    parser.add_argument('--eval', action='store_true', default=False)
+    args = parser.parse_args()
     
-    #################################
+    # Convert args to dictionary
+    args = vars(args)
+    #args['loss_type'] = 'Joint_position'
+    #args['feat_attention'] = True
+    #args['train_from_scratch'] = True
+    
+    # loss
+    if args['loss_type'] == 'Joint':
+        from mtp_goal_loss import mtp_goal_loss
+        loss_func_for_training = mtp_goal_loss
+    elif args['loss_type'] == 'Marginal':
+        from mtp_goal_loss import marginal_mtp_goal_loss
+        loss_func_for_training = marginal_mtp_goal_loss
+    elif args['loss_type'] == 'Joint_position':
+        loss_func_for_training = joint_mag_loss_w_inter_group_position
+    else:
+        raise ValueError('loss_type should be either Joint or Marginal')
+        
+    ##################################################################
     myhost = os.uname()[1]
     if myhost == 'AutoManRRCServer':
         data_path = '/disk6/SimAgent_Dataset/pyg_data_Jun23/training'
         args['device'] = 'cuda:1' 
-    elif myhost == 'amrrc':
-        train_data_path = '/home/xy/sim/SimAgent_Dataset/pyg_data_Jun23/validation_140-145'
-        eval_data_path  = '/home/xy/sim/SimAgent_Dataset/pyg_data_Jun23/validation_145-150'
+    elif myhost == 'xy-desktop':
+        train_data_path = '/home/xy/mzq/code/MAGDP/process_data/validation_0-140'
+        eval_data_path  = '/home/xy/mzq/code/MAGDP/process_data/validation_140-145'
         args['device'] = 'cuda:0'
     elif myhost == 'xy-Legion':
-        train_data_path = '/home/xy/sim/SimAgent_Dataset/pyg_data_Jun23/validation_140-145'
-        eval_data_path  = '/home/xy/sim/SimAgent_Dataset/pyg_data_Jun23/validation_145-150'
+        train_data_path = '/home/xy/sim/SimAgent_Dataset/pyg_data_Jun23/validation_0-140'
+        eval_data_path  = '/home/xy/sim/SimAgent_Dataset/pyg_data_Jun23/validation_140-145'
         args['device'] = 'cuda:0' 
     else: # NSCC
         data_path = '/home/users/ntu/baichuan/scratch/sim/SimAgent_Dataset/pyg_data_Jun23/training'
         args['device'] = 'cuda:0' 
     # args['use_feat'] = opt.use_feat # N, D, L, DL . N: nothing, D: Dyn only, L: CCLs only, DL: C-A, AA, D+L: Dyn+CCL
-    #################################
-        
-    #for threshold in np.arange(0.35, 0.5, 0.05):
-    #    threshold = round(threshold, 2)
-    #    args['threshold'] = threshold
+    ##################################################################
+    
+    norm_seg_dict = {
+        1: "D_L_I",
+        2: "D_I",
+        3: "D",
+        4: "D_L"
+    }
+
     now = datetime.now()
     dt_string = now.strftime("%d-%m-%Y_%H%M%S")     # dd/mm/YY H:M:S
 
     # make the directory for the output and ckpt
-    ckpt_folder_path = f"./models/{args['gnn_conv']}_{dt_string[3:5]}.{dt_string[:2]}/"
-    log_folder_path = f"./outs/{args['gnn_conv']}_{dt_string[3:5]}.{dt_string[:2]}/"
+    ckpt_folder_path = f"/home/xy/mzq/code/MAGDP/MGA/models/{dt_string[3:5]}.{dt_string[:2]}/"
+    log_folder_path = f"/home/xy/mzq/code/MAGDP/MGA//outs/{dt_string[3:5]}.{dt_string[:2]}/"
     os.makedirs(ckpt_folder_path, exist_ok=True)
     os.makedirs(log_folder_path, exist_ok=True)
-    for dist_threshold in args['dist_thresholds']:
-        threshold = 0
-        args['threshold'] = threshold
-        args['dist_threshold'] = dist_threshold
-        if args['train_from_scratch']:
-            train_net = MGA_net(args)
+   
+    # 
+    only_eval = False
+    threshold = args['threshold']
+    dist_threshold = args['dist_threshold']
+
+    model_name = f"{args['dec_type']}_M{args['num_modes']}_{args['loss_type']}_{'a_' if args['feat_attention'] else ''}{args['gnn_conv']}_{'tr_' if args['use_attention'] else ''}{f'g{threshold}_' if args['use_gsl'] else ''}{'' if args['dist_threshold'] == 50 else f'dt{dist_threshold}_'}{norm_seg_dict[args['norm_seg']]}"
+
+    if args['train_from_scratch']:
+        train_net = MGA_net(args)
+        start_ep = 1
+        # datetime object containing current date and time
+        now = datetime.now()
+        dt_string = now.strftime("%d-%m-%Y_%H%M%S")     # dd/mm/YY H:M:S
+        log_name = set_log_name(log_folder_path, dt_string)
+        f = open(log_name, "w+")
+        min_val_loss = 100.0
+    else:
+        if only_eval:
+            ckpt_path = './MGA/models/07.20/MGA_M6_Joint_position_a_GATConv_D_L_I_minJDE7.51.ckpt'
+            ckpt = torch.load(ckpt_path)
+            if isinstance(ckpt, nn.Module):
+                train_net = ckpt
+            elif isinstance(ckpt, dict):
+                train_net = MGA_net(args)
+                train_net.load_state_dict(ckpt, strict=False)
+            f = open('test.txt', "w+")
             start_ep = 1
-            # datetime object containing current date and time
-            now = datetime.now()
-            dt_string = now.strftime("%d-%m-%Y_%H%M%S")     # dd/mm/YY H:M:S
-
-            # make the directory for the output and ckpt
-            # ckpt_folder_path = f"./models/{args['gnn_conv']}_{dt_string[3:5]}.{dt_string[:2]}/"
-            # log_folder_path = f"./outs/{args['gnn_conv']}_{dt_string[3:5]}.{dt_string[:2]}/"
-            # os.makedirs(ckpt_folder_path, exist_ok=True)
-            # os.makedirs(log_folder_path, exist_ok=True)
-
-            # model_type = args['dec_type'] + '-M{}_'.format(args['num_modes']) + args['loss_type']
-            # use_a = args['use_attention']
-            # f = open(f"{log_folder_path}/MGA_print_{dt_string}_{model_type}_thr{threshold}-attenc{int(use_a)}.txt","w+")
-            log_name = set_log_name(log_folder_path, args, dt_string, threshold, dist_threshold)
-            f = open(log_name, "w+")
-            min_val_loss = 100.0
+            min_val_loss = 0
         else:
+            # find the ckpt file and log file
             ckpt_path_list = find_files_with_params('models', args['gnn_conv'], args['loss_type'], args['threshold'], int(args['use_attention']))
             log_path_list = find_files_with_params('outs', args['gnn_conv'], args['loss_type'], args['threshold'], int(args['use_attention']))
             assert len(ckpt_path_list) == 1, print(f"gnn_type:{args['gnn_conv']}, loss_type:{args['loss_type']}, threshold:{args['threshold']}, attenc:{args['use_attention']} has {len(ckpt_path_list)} ckpt files")
@@ -265,79 +311,73 @@ if __name__ == '__main__':
             train_net = torch.load(ckpt_path)
             f = open(log_path, "a+")
 
-        train_net.to(args['device'])
+    print(model_name, file=f, flush=True)
+    print(model_name)
+    pytorch_total_params = sum(p.numel() for p in train_net.parameters())
+    print('number of parameters: {}'.format(pytorch_total_params), file=f, flush=True)
+    print('number of parameters: {}'.format(pytorch_total_params))
 
-        print(f"threshold: {args['threshold']}", file=f, flush=True)
-        print(f"gnn_type: {args['gnn_conv']}", file=f, flush=True)
-        print(f"loss_type: {args['loss_type']}", file=f, flush=True)
-        print(f"enc_attention: {args['use_attention']}", file=f, flush=True)
-        print(f"dist_threshold: {dist_threshold}", file=f, flush=True)
+    train_net.to(args['device'])
+    optimizer = torch.optim.AdamW(train_net.parameters(), lr=0.0001, weight_decay=0.01) 
+    scheduler = MultiStepLR(optimizer, milestones=[20, 22, 24, 26, 28], gamma=0.5)
+
+    #################################
+    train_set = SimAgn_Dataset(data_path=train_data_path, dec_type=args['dec_type']) 
+    val_set = SimAgn_Dataset(data_path=eval_data_path, dec_type=args['dec_type']) 
+    print('train_size: {}, val_size: {}'.format(train_set.__len__(), val_set.__len__()))
+    trainDataloader = DataLoader(train_set, batch_size=args['batch_size'], shuffle=True, num_workers=12) # num_workers=6, 
+    valDataloader   = DataLoader(val_set,   batch_size=args['batch_size'], shuffle=True, num_workers=12) # num_workers=6, 
+    #################################
+
+    tic = time.time()
+    Val_LOSS = []
+    Train_LOSS = []
+
+    print(f"start_ep: {start_ep}, end_ep:{args['train_epoches'] + start_ep}")
+    for ep in range(start_ep, args['train_epoches'] + start_ep):
+        if ep == 1:
+            args_json = json.dumps(args, indent=4)
+            with open('args.json', 'w') as f:
+                f.write(args_json)
+        # logger.info(f"ep {ep}")
+        train_time_tic = time.time()
+        # logger.info(f"start training")
+        train_loss_ep = train_a_model(train_net, trainDataloader, loss_func=loss_func_for_training, num_ep=ep,  num_batch=args['num_batch'])
+        # logger.info(f"start evaluation")
+        eval_loss_ep  = eval_a_model(train_net,  valDataloader,   loss_func=loss_func_for_training, plot=False, num_batch=args['eval_num_batch'])
+        scheduler.step()
         
-        # print(args['threshold'])
-        # print(train_net, file=f, flush=True)
-        # print(train_net)
-
-        pytorch_total_params = sum(p.numel() for p in train_net.parameters())
-        print('number of parameters: {}'.format(pytorch_total_params), file=f, flush=True)
-        print('number of parameters: {}'.format(pytorch_total_params))
-
-        optimizer = torch.optim.AdamW(train_net.parameters(), lr=0.0001, weight_decay=0.01) 
-        scheduler = MultiStepLR(optimizer, milestones=[20, 22, 24, 26, 28], gamma=0.5)
-
-        #################################
-        train_set = SimAgn_Dataset(data_path=train_data_path, dec_type=args['dec_type']) 
-        val_set = SimAgn_Dataset(data_path=eval_data_path, dec_type=args['dec_type']) 
-        print('train_size: {}, val_size: {}'.format(train_set.__len__(), val_set.__len__()))
-        # train_set, val_set = torch.utils.data.random_split(full_train_set, [train_size, val_size])
-        trainDataloader = DataLoader(train_set, batch_size=args['batch_size'], shuffle=True, num_workers=12) # num_workers=6, 
-        valDataloader   = DataLoader(val_set,   batch_size=args['batch_size'], shuffle=True, num_workers=12) # num_workers=6, 
-        #################################
-
-        tic = time.time()
-        Val_LOSS = []
-        Train_LOSS = []
+        if args['loss_type'] == 'Joint':
+            if eval_loss_ep[1] < min_val_loss:
+                ckpt_name = set_ckpt_name(ckpt_folder_path, model_name, min_val_loss)
+                new_ckpt_name = set_ckpt_name(ckpt_folder_path, model_name, eval_loss_ep[1])
+                print(ckpt_name)
+                if os.path.exists(ckpt_name):
+                    os.remove(ckpt_name)
+                torch.save(train_net.state_dict(), new_ckpt_name)
+                min_val_loss = eval_loss_ep[1]
+        elif args['loss_type'] == 'Marginal':
+            if eval_loss_ep[2] < min_val_loss:
+                ckpt_name = set_ckpt_name(ckpt_folder_path, model_name, min_val_loss)
+                new_ckpt_name = set_ckpt_name(ckpt_folder_path, model_name, eval_loss_ep[2])
+                if os.path.exists(ckpt_name):
+                    os.remove(ckpt_name)
+                torch.save(train_net.state_dict(), new_ckpt_name)
+                min_val_loss = eval_loss_ep[2]
+        elif args['loss_type'] == 'Joint_position':
+            if eval_loss_ep[1] < min_val_loss:
+                ckpt_name = set_ckpt_name(ckpt_folder_path, model_name, min_val_loss)
+                new_ckpt_name = set_ckpt_name(ckpt_folder_path, model_name, eval_loss_ep[1])
+                if os.path.exists(ckpt_name):
+                    os.remove(ckpt_name)
+                torch.save(train_net.state_dict(), new_ckpt_name)
+                min_val_loss = eval_loss_ep[1]
         
-        print(f"start_ep: {start_ep}, end_ep:{args['train_epoches'] + start_ep}")
-        for ep in range(start_ep, args['train_epoches'] + start_ep):
-            train_time_tic = time.time()
-            train_loss_ep = train_a_model(train_net, trainDataloader, loss_func=loss_func_for_training, num_ep=ep,  num_batch=args['num_batch'])
-            eval_loss_ep  = eval_a_model(train_net,  valDataloader,   loss_func=loss_func_for_training, plot=False, num_batch=args['eval_num_batch'])
-            scheduler.step()
+        ep_lr = optimizer.state_dict()['param_groups'][0]['lr']
+        print(f'ep {ep}, SmoothL1 loss train {train_loss_ep}, eval {eval_loss_ep[0]}, min-Joint-FDE {eval_loss_ep[1]}, Marginal minFDE {eval_loss_ep[2]}, [ lr= {ep_lr} ]')
+        print(f'ep {ep}, SmoothL1 loss train {train_loss_ep}, eval {eval_loss_ep[0]}, min-Joint-FDE {eval_loss_ep[1]}, Marginal minFDE {eval_loss_ep[2]}, [ lr= {ep_lr} ]', file=f, flush=True)
+     
 
-            model_type = args['dec_type'] + '-M{}_'.format(args['num_modes']) + args['loss_type']
-            if args['feat_attention']:
-                model_type += '-attn'
-            if args['loss_type'] == 'Joint':
-                if eval_loss_ep[1] < min_val_loss:
-                    ckpt_name = set_ckpt_name(ckpt_folder_path, args, min_val_loss, threshold, dist_threshold)
-                    new_ckpt_name = set_ckpt_name(ckpt_folder_path, args, eval_loss_ep[1], threshold, dist_threshold)
-                    print(ckpt_name)
-                    if os.path.exists(ckpt_name):
-                        os.remove(ckpt_name)
-                    torch.save(train_net.state_dict(), new_ckpt_name)
-                    # if os.path.exists(f'{ckpt_folder_path}/{model_type}-minJDE{min_val_loss}-thr{threshold}-attenc{int(use_a)}.ckpt'):
-                    #     os.remove(f'{ckpt_folder_path}/{model_type}-minJDE{min_val_loss}-thr{threshold}-attenc{int(use_a)}.ckpt') 
-                    # torch.save(train_net, f'{ckpt_path}/{model_type}-minJDE{eval_loss_ep[1]}-thr{threshold}-attenc{int(use_a)}.ckpt')
-                    min_val_loss = eval_loss_ep[1]
-            elif args['loss_type'] == 'Marginal':
-                if eval_loss_ep[2] < min_val_loss:
-                    ckpt_name = set_ckpt_name(ckpt_folder_path, args, min_val_loss, threshold, dist_threshold)
-                    new_ckpt_name = set_ckpt_name(ckpt_folder_path, args, eval_loss_ep[2], threshold, dist_threshold)
-                    if os.path.exists(ckpt_name):
-                        os.remove(ckpt_name)
-                    torch.save(train_net.state_dict(), new_ckpt_name)
-                    # if os.path.exists(f'{ckpt_path}/{model_type}-minFDE{min_val_loss}-thr{threshold}-attenc{int(use_a)}.ckpt'):
-                    #     os.remove(f'{ckpt_path}/{model_type}-minFDE{min_val_loss}-thr{threshold}-attenc{int(use_a)}.ckpt') 
-                    # torch.save(train_net, f'{ckpt_path}/{model_type}-minFDE{eval_loss_ep[2]}-thr{threshold}-attenc{int(use_a)}.ckpt')
-                    min_val_loss = eval_loss_ep[2]
-            # if ep ==1:
-                # torch.save(train_net, f'./models/{model_type}-EP{ep}-Loss{eval_loss_ep[0]}-minFDE{eval_loss_ep[1]}.ckpt')
-            
-            ep_lr = optimizer.state_dict()['param_groups'][0]['lr']
-            print(f'{model_type}, ep {ep}, SmoothL1 loss train {train_loss_ep}, eval {eval_loss_ep[0]}, min-Joint-FDE {eval_loss_ep[1]}, Marginal minFDE {eval_loss_ep[2]}, [ lr= {ep_lr} ]')
-            print(f'{model_type}, ep {ep}, SmoothL1 loss train {train_loss_ep}, eval {eval_loss_ep[0]}, min-Joint-FDE {eval_loss_ep[1]}, Marginal minFDE {eval_loss_ep[2]}, [ lr= {ep_lr} ]', file=f, flush=True)
-            # torch.save(train_net, f'./models/mtpgoal-{ep}.ckpt')
-
-        f.close()
+    f.close()
 
         

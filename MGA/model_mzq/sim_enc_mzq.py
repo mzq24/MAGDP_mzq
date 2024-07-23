@@ -1,3 +1,12 @@
+from distutils.command import build
+import sys
+import os
+
+sys.path.append('../')
+sys.path.append('/home/xy/mzq/code/MAGDP')
+# sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from model_mzq.network_utils import init_GNNConv, build_network
 import select
 import torch
 from torch_geometric.nn import GATConv
@@ -17,28 +26,19 @@ class Sim_Enc(Sim_Base_Enc):
         self.args = args
         self.sigmoid = torch.nn.Sigmoid()
         
-        #self.gnn_conv = GATConv
-        self.init_GNNConv()
-        
         self.agn_Dyn_emb  = torch.nn.Linear(args['enc_hidden_size'], self.args['enc_embed_size'], bias=True)
         self.agn_CCL_emb  = torch.nn.Linear(args['enc_hidden_size'], self.args['enc_embed_size'], bias=True)
         self.agn_Int_emb  = torch.nn.Linear(self.args['enc_gat_size']*self.args['num_gat_head'], self.args['enc_embed_size'], bias=True)
         self.agn_CCLs_emb = torch.nn.Linear(self.args['enc_gat_size']*self.args['num_gat_head'], self.args['enc_embed_size'], bias=True)
-
-        self.CCL_to_Agn_GAT_1  = GATConv(self.args['enc_hidden_size'], self.args['enc_gat_size'], 
-                                        heads=self.args['num_gat_head'], concat=True, 
-                                        add_self_loops=False,
-                                        dropout=0.0)
         
-        self.Agn_to_Agn_GAT_1  = GATConv(self.args['enc_gat_size']*self.args['num_gat_head'], self.args['enc_gat_size'], 
-                                        heads=self.args['num_gat_head'], concat=True,  
-                                        add_self_loops=False,
-                                        dropout=0.0)
+        #self.gnn_conv = GATConv
+        self.gnn = init_GNNConv(self.args)
+        self.CCL_to_Agn_GAT_1, self.Agn_to_Agn_GAT_1 = build_network(args, self.gnn)
         
         ## Layer Norms
         self.norm2 = torch.nn.LayerNorm(self.args['enc_embed_size'])
 
-    def forward(self, pyg_data_fwd, agn_cnl=False, use_gsl=False):
+    def forward(self, pyg_data_fwd, agn_cnl=False):
         """
         param:
             pyg_data_fwd: a batch of data
@@ -60,39 +60,33 @@ class Sim_Enc(Sim_Base_Enc):
         agn_Dyn = self.leaky_relu(self.agn_Dyn_emb(self.leaky_relu(agn_feature)))
         TCL_Seq = self.leaky_relu(self.agn_CCL_emb(self.leaky_relu(ccl_feature)))
 
-        # get edge mask
-        # edge_mask_A2A = self.get_edge_mask(pyg_data_fwd.flat_edge_type, wanted_type=0)
-        # edge_mask_C2A = self.get_edge_mask(pyg_data_fwd.flat_edge_type, wanted_type=1)
-
-        # edges = pyg_data_fwd.edge_index     # 2 x E
-
-        # use gsl to get learnable edges
-        if use_gsl:
-            if not agn_cnl:
-                agn_mask = retrieve_mask(type_list=pyg_data_fwd.flat_node_type, wanted_type_set=('sdcAg', 'tarAg', 'nbrAg'))
-                if not hasattr(pyg_data_fwd, 'batch_adj_mask'):
-                    pyg_data_fwd.batch_adj_mask = torch.from_numpy(block_diag(pyg_data_fwd.adj_mask).toarray().astype(bool))
-                learnable_edges_feature_agent = raw_agn_cnl_enc[agn_mask, :]
-                pred_edge = self.Edge_Pred(learnable_edges_feature_agent, pyg_data_fwd.batch_adj_mask, \
-                                           self.args['threshold'])    # batch_adj_mask is a block diagonal matrix
-            else:
-                pass
-                # both agent and centerline are encoded
-                # selected_edges_A2A = edges[:, edge_mask_A2A]
-                # selected_edges_C2A = edges[:, edge_mask_C2A]
-
         # get different distance threshold from dataset 
         diff_dist = False
         if 'dist_threshold' in self.args:
-            assert not use_gsl, "use_gsl is True"
-            diff_dist = True
+            if self.args['dist_threshold'] < 50:
+                assert not self.args['use_gsl'], "use_gsl is True"
+                diff_dist = True
             
         # G1 Encoding
         agn_cnl_enc_ca  = self.C_A(raw_agn_cnl_enc, pyg_data_fwd.edge_index, pyg_data_fwd.flat_edge_type)
         agn_CCLs = self.leaky_relu(self.agn_CCLs_emb(self.leaky_relu(self.get_agn_feature(agn_cnl_enc_ca, pyg_data_fwd))))
             
+        # use gsl to get learnable edges
+        if self.args['use_gsl']:
+            if not agn_cnl:
+                agn_mask = retrieve_mask(type_list=pyg_data_fwd.flat_node_type, wanted_type_set=('sdcAg', 'tarAg', 'nbrAg'))
+                if not hasattr(pyg_data_fwd, 'batch_adj_mask'):
+                    pyg_data_fwd.batch_adj_mask = torch.from_numpy(block_diag(pyg_data_fwd.adj_mask).toarray().astype(bool))
+                # learnable_edges_feature_agent = raw_agn_cnl_enc[agn_mask, :]
+                learnable_edges_feature_agent = agn_cnl_enc_ca[agn_mask, :]
+                pred_edge = self.Edge_Pred(learnable_edges_feature_agent, pyg_data_fwd.batch_adj_mask, \
+                                           self.args['threshold'])    # batch_adj_mask is a block diagonal matrix
+                # self.logger.info("original edge number: %d, predicted edge number: %d" % (pyg_data_fwd.edge_index.shape[1], pred_edge.shape[1]))
+            else:
+                pass
+        
         # G2 Encoding, whether use gsl (gnn structure learning) or not
-        if use_gsl:
+        if self.args['use_gsl']:
             agn_enc_ca = agn_cnl_enc_ca[agn_mask, :]    # fetch agent features to align with the pred_edge
             agn_enc_aa_all  = self.A_A(agn_enc_ca, pyg_data_fwd.edge_index, pyg_data_fwd.flat_edge_type, edge_index=pred_edge)
              # get mask in only agent features, not all (including ccl features)
@@ -102,14 +96,20 @@ class Sim_Enc(Sim_Base_Enc):
             agn_Int  = self.leaky_relu(self.agn_Int_emb(self.leaky_relu(ang_enc_aa_sdc_tar)))
         else:
             if not diff_dist:
-                # normal G2 encoding
-                agn_cnl_enc_aa_all = self.A_A(agn_cnl_enc_ca, pyg_data_fwd.edge_index, pyg_data_fwd.flat_edge_type)
+                # G2 encoding
+                if self.args['norm_seg'] == 2:  
+                    agn_cnl_enc_aa_all = self.A_A(raw_agn_cnl_enc, pyg_data_fwd.edge_index, pyg_data_fwd.flat_edge_type)
+                else:
+                    agn_cnl_enc_aa_all = self.A_A(agn_cnl_enc_ca, pyg_data_fwd.edge_index, pyg_data_fwd.flat_edge_type)
                 agn_Int = self.leaky_relu(self.agn_Int_emb(self.leaky_relu(self.get_agn_feature(agn_cnl_enc_aa_all,  pyg_data_fwd))))   
             else:
                 # distance threshold G2 encoding
                 dist_edge_index = self.get_a2a_edge_dist_thr(pyg_data_fwd)
                 agn_mask = retrieve_mask(type_list=pyg_data_fwd.flat_node_type, wanted_type_set=('sdcAg', 'tarAg', 'nbrAg'))
-                agn_enc_ca = agn_cnl_enc_ca[agn_mask, :]
+                if self.args['norm_seg'] == 2:
+                    agn_enc_ca = raw_agn_cnl_enc[agn_mask, :]
+                else:
+                    agn_enc_ca = agn_cnl_enc_ca[agn_mask, :]
                 agn_enc_aa_all = self.A_A(agn_enc_ca, pyg_data_fwd.edge_index, pyg_data_fwd.flat_edge_type, edge_index=dist_edge_index)
                 goal_valid_mask_in_agn = pyg_data_fwd.goal_valid[agn_mask]
                 flat_sdc_tar_mask_in_agn = retrieve_mask(type_list=pyg_data_fwd.flat_node_type[agn_mask], wanted_type_set=('sdcAg', 'tarAg'))
@@ -133,15 +133,6 @@ class Sim_Enc(Sim_Base_Enc):
         # elif self.args['dec_type'] in ['GDP', 'testGDP', 'GDPall']:
         
         return agn_Dyn, agn_CCLs, agn_Int, TCL_Seq
-
-    def init_GNNConv(self):
-        if self.args['gnn_conv'] == 'GATv2Conv':
-            from torch_geometric.nn import GATv2Conv as GNNConv
-        elif self.args['gnn_conv'] == 'GATConv':
-            from torch_geometric.nn import GATConv as GNNConv
-        elif self.args['gnn_conv'] == 'TransformerConv':
-            from torch_geometric.nn import TransformerConv as GNNConv
-        self.gnn_conv = GNNConv
 
     def get_agn_feature(self, agn_cnl_enc, pyg_data, types=None):
         if types is not None:
@@ -299,7 +290,7 @@ class Sim_Enc(Sim_Base_Enc):
             edge_index = Edges[:,edge_mask_in_A_A]
         else:
             edge_index = edge_index
-        a_a_gat_feature = self.leaky_relu( self.Agn_to_Agn_GAT_1(CLA_feat, edge_index))
+        a_a_gat_feature = self.leaky_relu(self.Agn_to_Agn_GAT_1(CLA_feat, edge_index))
         return a_a_gat_feature
 
     def A_A_mzq(self, CLA_feat, Edges, edge_type_list_aa, edge_index=None):
@@ -388,5 +379,11 @@ class Sim_Enc(Sim_Base_Enc):
         prob_adj[~adj_mask]=0
 
         return (prob_adj > threshold).nonzero(as_tuple=False).t()
+    
+    def set_written_file(self, written_file):
+        self.written_file = written_file
+
+    def set_logger(self, logger):
+        self.logger = logger
 
     

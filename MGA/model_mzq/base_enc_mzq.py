@@ -55,8 +55,8 @@ class Sim_Base_Enc(torch.nn.Module):
                                         torch.nn.Linear(self.args['enc_hidden_size'], self.args['enc_hidden_size'], bias=True), 
                                         torch.nn.LeakyReLU(0.1),
                                         )
-
-        self.attention_encoder = TransformerModel_m(input_dim=6, emb_dim=self.args['enc_hidden_size'], output_dim=self.args['enc_hidden_size'], num_layers=2, num_heads=4)    
+        if self.args['use_attention']:
+            self.attention_encoder = TransformerModel_m(input_dim=6, emb_dim=self.args['enc_hidden_size'], output_dim=self.args['enc_hidden_size'], num_layers=2, num_heads=4)    
 
         # Activations:
         self.leaky_relu = torch.nn.LeakyReLU(0.1)
@@ -81,7 +81,7 @@ class Sim_Base_Enc(torch.nn.Module):
         # x[CCL_mask] = normlize_CCL_seq(x[CCL_mask])
 
         ## 序列信息
-        if use_attention:
+        if self.args['use_attention']:
             Agn_Enc_Hist = self.attention_encoder(x[Agn_mask])  
         else:
             Agn_Enc_Hist = self.Agn_Enc_MLP(torch.flatten(x[Agn_mask], start_dim=1))     # flatten: [N, T, F] -> [N, T * F]
